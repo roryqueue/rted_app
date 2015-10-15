@@ -2,8 +2,7 @@ import requests
 import os
 import json
 
-from flask import Flask, Response, request, session, g, redirect, url_for, abort, render_template, flash
-from urlparse import urljoin
+from flask import Flask, Response, request, render_template
 
 app = Flask(__name__)
 
@@ -11,27 +10,41 @@ app = Flask(__name__)
 def index():
     return render_template('base.html')
 
-@app.route('/api/<path:path>', methods=['GET'])
-def api(path):
-    clientToken = ''
-    clientSecret = ''
-    baseUrl = 'https://suggestqueries.google.com'
-    accessToken = ''
-
-    # Authentication
-    #
-    # session.auth = EdgeGridAuth (
-    #     client_token = clientToken,
-    #     client_secret = clientSecret,
-    #     access_token = accessToken
-    # )
-
-    r = requests.get(urljoin(baseUrl, path), params=request.args)
-
-    if r.status_code != requests.codes.ok:
-        return None
-
-    return Response(r.content,  mimetype='application/json')
+@app.route('/api', methods=["GET"])
+def api():
+    request.args['tables'] = [
+        table for table in\
+        request.args.get('tables', request.args.get('table')).split('+')
+    ]
+    pg_cursor.execute(
+        """ SELECT {columns}
+            FROM {tables}
+            {min_date_clause}
+            {max_date_clause}
+            ORDER BY a.DATE ASC;
+        """, {
+            'columns': ,
+            'tables': '{} base'.format(request.args['tables'][0]) +\
+                reduce(
+                    lambda table_list, table: table_list + table,
+                    [
+                        '\nLEFT JOIN {table} ON base.DATE = {table}.DATE'.format(table=table)\
+                        for table in request.args['tables'][1:]
+                    ]
+                ),
+            'min_date_clause': 'WHERE a.DATE => {min_date_clause}'.format(
+                request.args['min_date'] if request.args.get('min_date') else ''
+            ),
+            'max_date_clause': (
+                'AND ' if request.args.get('min_date') else 'WHERE '\
+                + 'a.DATE <= {max_date}'.format(
+                    request.args['max_date']
+                )
+            ) if request.args.get('max_date') else ''
+        }
+    )
+    response_content = json.dumps({})
+    return Response(response_content,  mimetype='application/json')
 
 if __name__ == "__main__":
     app.run(debug=True)
